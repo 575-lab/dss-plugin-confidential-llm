@@ -66,6 +66,9 @@ The plugin talks to a small gateway running **inside** the confidential VM, in f
   NRAS tokens whose `eat_nonce` is that same digest, produced by `nvattest attest --verifier remote --nonce ...`).
 - `POST /v1/chat/completions` with an EHBP-encrypted body, forwarded to the model server. Plaintext requests must be refused.
 - A bearer-token check and TLS if it is reachable over a network you do not fully control.
+- When it forwards to the model server, it must **rewrite the `Host` header to the server's own address**. Servers such as
+  Ollama answer `403` (empty body) to any non-local `Host`, and the client's `Host` is the gateway's public address. Testing
+  through a local tunnel hides this, because the host there is `localhost`.
 
 The binding construction in `python-lib/confidentialllm/binding.py` must match the gateway byte for byte.
 
