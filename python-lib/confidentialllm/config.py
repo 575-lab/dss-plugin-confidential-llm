@@ -134,7 +134,9 @@ class EndpointConfig:
     @property
     def cache_key(self):
         """Sessions are shared between connections with the same trust settings."""
-        return (self.base_url, self.pins, self.allowed_tcb, self.ttl_seconds, self.gateway_token, self.ca_certificate)
+        # Must be hashable (it is a dict key): pins are dicts, so freeze each one into sorted items.
+        frozen_pins = tuple(tuple(sorted(pin.items())) for pin in self.pins)
+        return (self.base_url, frozen_pins, self.allowed_tcb, self.ttl_seconds, self.gateway_token, self.ca_certificate)
 
     @classmethod
     def from_preset(cls, preset, *, discovery=False):
