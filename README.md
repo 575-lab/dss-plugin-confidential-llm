@@ -37,6 +37,29 @@ Prompt Studio / recipe / agent
 Without pins the connection refuses to start. The only way around that is the explicit *Allow unpinned endpoint
 (testing only)* option, which proves "a genuine TDX machine", not "this machine".
 
+## Threat model
+
+This plugin protects prompts and answers **from DSS to the enclave**. It assumes DSS itself is trusted.
+
+| Trusted | Not trusted |
+|---|---|
+| DSS and its operators, including whatever DSS records (logs, traces, Prompt Studio runs, saved projects) | The network between DSS and the confidential VM |
+| The person who administers the confidential VM and the model server on it | The cloud provider and its hypervisor (the host the VM runs on) |
+| Intel's and NVIDIA's attestation services and root keys | Anyone who obtains the VM's disk, snapshots or network traffic |
+
+What this buys you: a prompt is only decrypted by a gateway whose key is bound, through hardware attestation, to a genuine
+Intel TDX guest with a genuine NVIDIA GPU that matches the measurements you pinned. The cloud host cannot read it.
+
+What it does not cover:
+
+- **DSS itself.** The text is in plain form inside DSS before it is sent and after the answer returns. Where DSS stores LLM queries
+  (logs, traces, Prompt Studio history, hosted-service retention on Dataiku Cloud) depends on your instance's settings and is
+  outside this plugin. Use made-up or masked data until you have checked.
+- **The administrator of the VM.** Anyone with root inside the VM can read the model server's memory.
+- **Which model runs.** Pins identify the boot environment, not the gateway, model server or weights.
+
+If DSS must also be untrusted, the encryption has to happen on the user's side before the text reaches DSS. That is a different design.
+
 ## What is and is not protected
 
 Protected: prompts and answers are unreadable to the network and to the cloud host, and are only decrypted by a
