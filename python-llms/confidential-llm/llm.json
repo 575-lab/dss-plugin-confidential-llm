@@ -1,0 +1,25 @@
+/* Descriptor of the Confidential LLM custom LLM connection */
+{
+    "meta": {
+        "label": "Confidential LLM (attested enclave)",
+        "description": "Chat completion served by a model inside an attested Intel TDX + NVIDIA GPU confidential VM. Prompts are encrypted to the enclave's attested key.",
+        "icon": "fas fa-user-shield"
+    },
+    "params": [
+        {
+            "name": "model",
+            "label": "Model name on the server",
+            "type": "STRING",
+            "defaultValue": "qwen3.8-27b-uncensored",
+            "mandatory": true,
+            "description": "The model identifier the server exposes (for Ollama: the name from `ollama list`)."
+        },
+        {
+            "name": "endpoint",
+            "label": "Confidential endpoint",
+            "type": "PRESET",
+            "parameterSetId": "confidential-endpoint",
+            "mandatory": true
+        }
+    ]
+}

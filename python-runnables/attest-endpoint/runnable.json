@@ -1,0 +1,22 @@
+/* Macro: attest a confidential endpoint and show what it proves, so an administrator can review and pin its identity. */
+{
+    "meta": {
+        "label": "Attest confidential endpoint",
+        "description": "Verifies the endpoint's Intel TDX quote and NVIDIA GPU attestation, then shows the measurements to review and pin.",
+        "icon": "fas fa-shield-alt"
+    },
+    "impersonate": false,
+    "permissions": ["WRITE_CONF"],
+    "resultType": "HTML",
+    "resultLabel": "Attestation report",
+    "macroRoles": [],
+    "params": [
+        {
+            "name": "endpoint",
+            "label": "Confidential endpoint",
+            "type": "PRESET",
+            "parameterSetId": "confidential-endpoint",
+            "mandatory": true
+        }
+    ]
+}

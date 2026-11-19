@@ -1,0 +1,18 @@
+{
+    "id": "confidential-llm",
+    "version": "0.1.0",
+    "meta": {
+        "label": "Confidential LLM",
+        "category": "Generative AI",
+        "description": "Use an LLM running in a hardware-attested confidential VM (Intel TDX + NVIDIA H100) as an LLM Mesh model. Prompts are encrypted to a key proven to live inside the verified enclave.",
+        "author": "575 Lab, Dataiku",
+        "icon": "fas fa-user-shield",
+        "licenseInfo": "Apache Software License",
+        "url": "https://github.com/575-lab/dss-plugin-confidential-llm",
+        "tags": [
+            "LLM Mesh",
+            "Confidential computing"
+        ],
+        "supportLevel": "NOT_SUPPORTED"
+    }
+}

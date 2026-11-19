@@ -1,0 +1,65 @@
+/* Connection and trust settings for one confidential LLM endpoint (a gateway running inside a TDX + GPU confidential VM). */
+{
+    "meta": {
+        "label": "Confidential endpoint",
+        "description": "Where the attested gateway is, and which enclave identity to trust.",
+        "icon": "fas fa-user-shield"
+    },
+    "defaultDefinableInline": false,
+    "defaultDefinableAtProjectLevel": false,
+    "pluginParams": [],
+    "params": [
+        {
+            "name": "gateway_url",
+            "label": "Gateway URL",
+            "type": "STRING",
+            "description": "For example https://10.0.0.5:8443. Must be reachable from the DSS node.",
+            "mandatory": true
+        },
+        {
+            "name": "gateway_token",
+            "label": "Gateway access token",
+            "type": "PASSWORD",
+            "description": "Sent as a bearer token. It is NOT encrypted by the body-encryption layer, so use https or a private network."
+        },
+        {
+            "name": "ca_certificate",
+            "label": "Trusted gateway certificate (PEM)",
+            "type": "TEXTAREA",
+            "description": "For an https gateway with a self-signed certificate: paste the certificate here. Only this certificate is then trusted. Leave empty to use the system's certificate authorities."
+        },
+        {
+            "name": "pins",
+            "label": "Pinned TDX measurements",
+            "type": "TEXTAREA",
+            "description": "JSON object (or list of objects, any-of) with mr_td, rtmr0, rtmr1, rtmr2 as 96-character hex. Get them from the 'Attest confidential endpoint' macro and review them first. Required unless unpinned mode is enabled."
+        },
+        {
+            "name": "allow_unpinned",
+            "label": "Allow unpinned endpoint (testing only)",
+            "type": "BOOLEAN",
+            "defaultValue": false,
+            "description": "Accept any genuine TDX machine with a valid NVIDIA GPU attestation. This proves hardware, not WHICH machine or software. Do not use in production."
+        },
+        {
+            "name": "allowed_tcb",
+            "label": "Allowed Intel TCB statuses",
+            "type": "STRINGS",
+            "defaultValue": ["UpToDate"],
+            "description": "Intel's verdict on the CPU's security patch level. Anything else (for example OutOfDate) is rejected unless listed here."
+        },
+        {
+            "name": "attestation_ttl_minutes",
+            "label": "Re-attest every (minutes)",
+            "type": "INT",
+            "defaultValue": 10,
+            "description": "Attestation takes a few seconds (it calls Intel and NVIDIA services), so it is cached per process for this long."
+        },
+        {
+            "name": "request_timeout_seconds",
+            "label": "Request timeout (seconds)",
+            "type": "INT",
+            "defaultValue": 300
+        }
+    ]
+}
