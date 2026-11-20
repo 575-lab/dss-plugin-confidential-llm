@@ -80,6 +80,7 @@ class ConfidentialLLM(BaseLLM):
             done = object()
             finish_reason = None
             saw_tool_calls = False
+            saw_output = False
             try:
                 while True:
                     event = await loop.run_in_executor(None, next, events, done)
@@ -88,11 +89,13 @@ class ConfidentialLLM(BaseLLM):
                     chunk, finish = messages.stream_event_to_dss(event)
                     if chunk:
                         saw_tool_calls = saw_tool_calls or bool(chunk.get("toolCalls"))
+                        saw_output = True
                         yield {"chunk": chunk}
                     if finish:
                         finish_reason = finish
             finally:
                 await loop.run_in_executor(None, events.close)
+            messages.check_answer_produced(finish_reason, saw_output)
             if saw_tool_calls and finish_reason in (None, "stop", "unknown"):
                 finish_reason = "tool_calls"
             yield {"footer": {"finishReason": finish_reason or "stop"}}

@@ -4,7 +4,7 @@ import pytest
 
 from confidentialllm import messages
 from confidentialllm.client import iter_sse_json
-from confidentialllm.errors import UnsupportedRequestError
+from confidentialllm.errors import OutputLimitError, UnsupportedRequestError
 
 
 def test_content_and_text_parts_are_mapped():
@@ -166,3 +166,10 @@ def test_thinking_and_default_max_tokens():
     body = messages.build_request("m", {"messages": []}, {"maxOutputTokens": 100}, default_max_tokens=8192)
     assert body["max_tokens"] == 100 and "reasoning_effort" not in body
     assert "max_tokens" not in messages.build_request("m", {"messages": []}, {}, default_max_tokens=None)
+
+
+def test_length_stop_without_any_answer_is_an_explicit_error():
+    with pytest.raises(OutputLimitError, match="Thinking = Off"):
+        messages.to_dss_response({"choices": [{"finish_reason": "length", "message": {"content": "", "reasoning": "..."}}]})
+    # A truncated but non-empty answer is still returned.
+    assert messages.to_dss_response({"choices": [{"finish_reason": "length", "message": {"content": "partial"}}]})["text"] == "partial"

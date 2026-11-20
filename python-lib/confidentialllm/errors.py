@@ -38,3 +38,7 @@ class GatewayError(ConfidentialLLMError):
 
 class UnsupportedRequestError(ConfidentialLLMError, ValueError):
     """The DSS request uses a feature this connection does not implement."""
+
+
+class OutputLimitError(ConfidentialLLMError):
+    """The model hit its output-token limit before producing any answer (typically: it was still thinking)."""

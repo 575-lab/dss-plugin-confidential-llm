@@ -16,7 +16,7 @@
 
 import json
 
-from .errors import UnsupportedRequestError
+from .errors import OutputLimitError, UnsupportedRequestError
 
 SUPPORTED_ROLES = ("system", "user", "assistant", "tool")
 
@@ -150,6 +150,16 @@ def build_request(model, query, settings, stream=False, thinking="default", defa
     return body
 
 
+OUTPUT_LIMIT_MESSAGE = (
+    "The model reached its output-token limit while still thinking and returned no answer. "
+    "Set Thinking = Off on the model in the connection, or raise 'Default max output tokens'.")
+
+
+def check_answer_produced(finish_reason, has_output):
+    if finish_reason == "length" and not has_output:
+        raise OutputLimitError(OUTPUT_LIMIT_MESSAGE)
+
+
 def _finish_reason(value):
     return value if value in FINISH_REASONS else "unknown"
 
@@ -186,6 +196,7 @@ def to_dss_response(openai_response):
         response["finishReason"] = _finish_reason(choice["finish_reason"])
     elif tool_calls:
         response["finishReason"] = "tool_calls"
+    check_answer_produced(response.get("finishReason"), bool(text or tool_calls))
     usage = openai_response.get("usage") or {}
     if "prompt_tokens" in usage:
         response["promptTokens"] = usage["prompt_tokens"]

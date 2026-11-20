@@ -1,6 +1,6 @@
 {
     "id": "confidential-llm",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "meta": {
         "label": "Confidential LLM",
         "category": "Generative AI",

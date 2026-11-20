@@ -210,6 +210,23 @@ def test_llm_stream_forwards_tools_and_tool_call_deltas(monkeypatch):
     ]
 
 
+def test_llm_stream_reports_thinking_only_truncation(monkeypatch):
+    module, llm = make_llm()
+    monkeypatch.setattr(llm.session, "current", fake_result)
+
+    def stream(session, body):
+        yield {"choices": [{"delta": {"reasoning": "thinking"}}]}
+        yield {"choices": [{"delta": {}, "finish_reason": "length"}]}
+
+    monkeypatch.setattr(client, "stream", stream)
+
+    async def collect():
+        return [c async for c in llm.aprocess_stream({"messages": [{"role": "user", "content": "x"}]}, {}, FakeTrace())]
+
+    with pytest.raises(Exception, match="output-token limit"):
+        asyncio.run(collect())
+
+
 def test_llm_stream_closes_the_underlying_stream_on_early_exit(monkeypatch):
     module, llm = make_llm()
     monkeypatch.setattr(llm.session, "current", fake_result)
