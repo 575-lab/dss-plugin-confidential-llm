@@ -22,6 +22,29 @@ def test_content_and_text_parts_are_mapped():
     assert body["model"] == "m" and body["stream"] is False
 
 
+def test_system_messages_are_merged_into_one_leading_message():
+    # Qwen's chat template raises "System message must be at the beginning" otherwise.
+    query = {"messages": [
+        {"role": "user", "content": "q1"},
+        {"role": "system", "content": "rule A"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "system", "parts": [{"type": "TEXT", "text": "rule B"}]},
+        {"role": "system", "content": ""},
+        {"role": "user", "content": "q2"},
+    ]}
+    assert messages.build_request("m", query, {})["messages"] == [
+        {"role": "system", "content": "rule A\n\nrule B"},
+        {"role": "user", "content": "q1"},
+        {"role": "assistant", "content": "a1"},
+        {"role": "user", "content": "q2"},
+    ]
+
+
+def test_no_system_message_is_added_when_none_given():
+    query = {"messages": [{"role": "user", "content": "hi"}]}
+    assert messages.build_request("m", query, {})["messages"] == [{"role": "user", "content": "hi"}]
+
+
 def test_settings_are_mapped_and_unset_ones_omitted():
     body = messages.build_request("m", {"messages": []}, {
         "temperature": 0.2, "topP": 0.9, "maxOutputTokens": 50, "stopSequences": ["END"],

@@ -46,6 +46,13 @@ def _message_text(message):
 
 
 def to_openai_messages(messages):
+    """Convert DSS messages to OpenAI ones.
+
+    Many chat templates (Qwen among them) reject a system message anywhere but first, while DSS can send
+    several (e.g. Prompt Studio instructions plus a user-provided system prompt). All system messages are
+    therefore merged, in order, into a single leading system message.
+    """
+    system_texts = []
     result = []
     for message in messages:
         role = message.get("role")
@@ -53,7 +60,14 @@ def to_openai_messages(messages):
             raise UnsupportedRequestError("Message role {!r} is not supported (tool calling is not implemented).".format(role))
         if message.get("toolCalls") or message.get("toolOutputs"):
             raise UnsupportedRequestError("Tool calls are not supported by this connection.")
-        result.append({"role": role, "content": _message_text(message)})
+        text = _message_text(message)
+        if role == "system":
+            if text:
+                system_texts.append(text)
+        else:
+            result.append({"role": role, "content": text})
+    if system_texts:
+        result.insert(0, {"role": "system", "content": "\n\n".join(system_texts)})
     return result
 
 
