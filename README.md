@@ -125,7 +125,7 @@ Pins fingerprint how the VM booted. If the VM boots a different kernel or firmwa
 
 ## Current limits
 
-Text completion and streaming only. Tool calling, images and embeddings are rejected with an explicit error.
+Text completion, streaming and tool calling (DSS tools and agents; the tool definitions and results travel encrypted like the rest of the prompt). Images and embeddings are rejected with an explicit error. Tool calling needs a model and chat template that support it (the Qwen model used here does).
 `topK` is ignored. The gateway this plugin talks to is **not part of this repository** (see "The gateway" below).
 
 ## Development

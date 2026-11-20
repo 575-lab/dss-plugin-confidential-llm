@@ -163,7 +163,35 @@ def test_llm_stream_yields_text_chunks_only(monkeypatch):
     async def collect():
         return [c async for c in llm.aprocess_stream({"messages": [{"role": "user", "content": "x"}]}, {}, FakeTrace())]
 
-    assert asyncio.run(collect()) == [{"chunk": {"text": "Hel"}}, {"chunk": {"text": "lo"}}]
+    assert asyncio.run(collect()) == [{"chunk": {"text": "Hel"}}, {"chunk": {"text": "lo"}}, {"footer": {"finishReason": "stop"}}]
+
+
+def test_llm_stream_forwards_tools_and_tool_call_deltas(monkeypatch):
+    module, llm = make_llm()
+    monkeypatch.setattr(llm.session, "current", fake_result)
+    seen = {}
+
+    def stream(session, body):
+        seen["body"] = body
+        yield {"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "id": "c1", "type": "function", "function": {"name": "get_flow", "arguments": ""}}]}}]}
+        yield {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "{\"k\": 1}"}}]}}]}
+        yield {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]}
+
+    monkeypatch.setattr(client, "stream", stream)
+    settings = {"tools": [{"type": "function", "function": {"name": "get_flow", "parameters": None}}],
+                "toolChoice": {"type": "auto"}}
+
+    async def collect():
+        return [c async for c in llm.aprocess_stream({"messages": [{"role": "user", "content": "x"}]}, settings, FakeTrace())]
+
+    out = asyncio.run(collect())
+    assert seen["body"]["tools"][0]["function"]["name"] == "get_flow" and seen["body"]["tool_choice"] == "auto"
+    assert out == [
+        {"chunk": {"toolCalls": [{"type": "function", "id": "c1", "index": 0, "function": {"name": "get_flow", "arguments": ""}}]}},
+        {"chunk": {"toolCalls": [{"type": "function", "index": 0, "function": {"arguments": "{\"k\": 1}"}}]}},
+        {"footer": {"finishReason": "tool_calls"}},
+    ]
 
 
 def test_llm_stream_closes_the_underlying_stream_on_early_exit(monkeypatch):

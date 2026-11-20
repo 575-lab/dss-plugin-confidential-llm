@@ -55,15 +55,71 @@ def test_settings_are_mapped_and_unset_ones_omitted():
     assert "top_k" not in body and "frequency_penalty" not in body
 
 
-def test_images_tools_and_unknown_roles_are_rejected_explicitly():
+def test_images_and_unknown_roles_are_rejected_explicitly():
     with pytest.raises(UnsupportedRequestError, match="text-only"):
         messages.build_request("m", {"messages": [{"role": "user", "parts": [{"type": "IMAGE_URI", "imageUrl": "x"}]}]}, {})
-    with pytest.raises(UnsupportedRequestError, match="Tool"):
-        messages.build_request("m", {"messages": [], "tools": [{"name": "t"}]}, {})
     with pytest.raises(UnsupportedRequestError, match="role"):
+        messages.build_request("m", {"messages": [{"role": "function", "content": "x"}]}, {})
+    with pytest.raises(UnsupportedRequestError, match="tool outputs"):
         messages.build_request("m", {"messages": [{"role": "tool", "content": "x"}]}, {})
-    with pytest.raises(UnsupportedRequestError, match="Tool calls"):
-        messages.build_request("m", {"messages": [{"role": "assistant", "content": "x", "toolCalls": [{}]}]}, {})
+    with pytest.raises(UnsupportedRequestError, match="function name"):
+        messages.build_request("m", {"messages": []}, {"tools": [{"type": "function", "function": {}}]})
+
+
+def test_tools_from_settings_are_translated():
+    settings = {"tools": [
+        {"type": "function", "function": {"name": "a", "description": "A", "parameters": {"type": "object", "properties": {"x": {"type": "string"}}}, "compatible": True}},
+        {"type": "function", "function": {"name": "b", "parameters": None, "strict": None}},
+    ], "toolChoice": {"type": "tool_name", "name": "a"}}
+    body = messages.build_request("m", {"messages": []}, settings)
+    assert body["tools"] == [
+        {"type": "function", "function": {"name": "a", "description": "A", "parameters": {"type": "object", "properties": {"x": {"type": "string"}}}}},
+        {"type": "function", "function": {"name": "b", "parameters": {"type": "object", "properties": {}}}},
+    ]
+    assert body["tool_choice"] == {"type": "function", "function": {"name": "a"}}
+    for dss, openai in (("auto", "auto"), ("none", "none"), ("required", "required")):
+        assert messages.build_request("m", {"messages": []}, dict(settings, toolChoice={"type": dss}))["tool_choice"] == openai
+    assert "tool_choice" not in messages.build_request("m", {"messages": []}, {"tools": settings["tools"]})
+    assert "tools" not in messages.build_request("m", {"messages": []}, {"tools": []})
+
+
+def test_tool_call_history_is_translated():
+    query = {"messages": [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "q"},
+        {"role": "assistant", "toolCalls": [{"type": "function", "id": "c1", "function": {"name": "a", "arguments": "{\"x\": 1}"}},
+                                            {"type": "function", "id": "c2", "function": {"name": "b", "arguments": {"y": 2}}}]},
+        {"role": "tool", "toolOutputs": [{"callId": "c1", "output": "r1"}, {"callId": "c2", "parts": [{"type": "TEXT", "text": "r2"}]}]},
+        {"role": "system", "content": "late"},
+    ]}
+    assert messages.build_request("m", query, {})["messages"] == [
+        {"role": "system", "content": "sys\n\nlate"},
+        {"role": "user", "content": "q"},
+        {"role": "assistant", "content": None, "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "a", "arguments": "{\"x\": 1}"}},
+            {"id": "c2", "type": "function", "function": {"name": "b", "arguments": "{\"y\": 2}"}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": "r1"},
+        {"role": "tool", "tool_call_id": "c2", "content": "r2"},
+    ]
+
+
+def test_tool_calls_in_response_are_mapped():
+    r = messages.to_dss_response({"choices": [{"finish_reason": "tool_calls", "message": {"content": None, "tool_calls": [
+        {"id": "c1", "type": "function", "function": {"name": "a", "arguments": "{}"}}]}}]})
+    assert r == {"text": "", "finishReason": "tool_calls",
+                 "toolCalls": [{"type": "function", "id": "c1", "function": {"name": "a", "arguments": "{}"}}]}
+    assert messages.to_dss_response({"choices": [{"finish_reason": "weird", "message": {"content": "x"}}]})["finishReason"] == "unknown"
+
+
+def test_stream_event_mapping():
+    assert messages.stream_event_to_dss({"choices": [{"delta": {"content": "Hi"}}]}) == ({"text": "Hi"}, None)
+    assert messages.stream_event_to_dss({"choices": [{"delta": {"reasoning": "t"}}]}) == (None, None)
+    assert messages.stream_event_to_dss({"choices": [{"delta": {}, "finish_reason": "length"}]}) == (None, "length")
+    assert messages.stream_event_to_dss({}) == (None, None)
+    # Ollama sends whole tool calls without an index: position in the list is used.
+    chunk, _ = messages.stream_event_to_dss({"choices": [{"delta": {"tool_calls": [
+        {"id": "c1", "function": {"name": "a", "arguments": "{}"}}, {"id": "c2", "function": {"name": "b", "arguments": "{}"}}]}}]})
+    assert [c["index"] for c in chunk["toolCalls"]] == [0, 1]
 
 
 def test_response_mapping_with_and_without_usage():
