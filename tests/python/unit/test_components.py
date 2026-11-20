@@ -120,6 +120,22 @@ def test_llm_set_config_with_a_real_preset_does_not_raise():
     make_llm()  # exactly what DSS does at "Failed to start custom LLM server"
 
 
+def test_llm_thinking_and_max_tokens_options(monkeypatch):
+    module = load("python-llms/confidential-llm/llm.py", "llm_under_test_opts")
+    llm = module.ConfidentialLLM()
+    llm.set_config({"model": "m", "endpoint": preset(), "thinking": "off", "default_max_output_tokens": 0}, {})
+    assert llm.thinking == "off" and llm.default_max_tokens is None
+    monkeypatch.setattr(llm.session, "current", fake_result)
+    seen = {}
+    monkeypatch.setattr(client, "complete", lambda session, body: seen.setdefault("body", body) and {"choices": [{"message": {"content": "ok"}}]})
+    llm.process({"messages": [{"role": "user", "content": "x"}]}, {}, FakeTrace())
+    assert seen["body"]["reasoning_effort"] == "none" and "max_tokens" not in seen["body"]
+    _, default_llm = make_llm()
+    assert default_llm.thinking == "default" and default_llm.default_max_tokens == 8192
+    with pytest.raises(ValueError, match="thinking"):
+        module.ConfidentialLLM().set_config({"model": "m", "endpoint": preset(), "thinking": "max"}, {})
+
+
 def test_llm_set_config_rejects_missing_pins_and_missing_model():
     module = load("python-llms/confidential-llm/llm.py", "llm_under_test2")
     with pytest.raises(Exception, match="pinned"):

@@ -21,7 +21,7 @@ def test_valid_preset():
     assert cfg.pins == ({"mr_td": H},)
     assert cfg.allowed_tcb == frozenset({"UpToDate"})
     assert cfg.ttl_seconds == 600
-    assert cfg.timeout_seconds == 300
+    assert cfg.timeout_seconds == 600
     assert not cfg.allow_unpinned
 
 

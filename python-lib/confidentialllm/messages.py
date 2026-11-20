@@ -129,13 +129,17 @@ def _to_openai_tool_choice(choice):
     return None
 
 
-def build_request(model, query, settings, stream=False):
+def build_request(model, query, settings, stream=False, thinking="default", default_max_tokens=None):
     settings = settings or {}
     body = {"model": model, "messages": to_openai_messages(query.get("messages") or []), "stream": bool(stream)}
     for dss_name, openai_name in SETTINGS_MAP.items():
         value = settings.get(dss_name)
         if value is not None and value != []:
             body[openai_name] = value
+    if "max_tokens" not in body and default_max_tokens:
+        body["max_tokens"] = default_max_tokens
+    if thinking == "off":
+        body["reasoning_effort"] = "none"  # Ollama: disables the model's thinking phase
     # DSS puts tool definitions in the completion settings (older versions may put them on the query).
     tools = settings.get("tools") or query.get("tools")
     if tools:

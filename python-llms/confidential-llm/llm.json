@@ -15,6 +15,24 @@
             "description": "The model identifier the server exposes (for Ollama: the name from `ollama list`)."
         },
         {
+            "name": "thinking",
+            "label": "Thinking",
+            "type": "SELECT",
+            "defaultValue": "default",
+            "selectChoices": [
+                {"value": "default", "label": "Model default (thinks before answering)"},
+                {"value": "off", "label": "Off (much faster; recommended for agents)"}
+            ],
+            "description": "Reasoning models can think for thousands of tokens on large agent prompts. 'Off' sends reasoning_effort=none."
+        },
+        {
+            "name": "default_max_output_tokens",
+            "label": "Default max output tokens",
+            "type": "INT",
+            "defaultValue": 8192,
+            "description": "Cap applied when the caller sets no max output tokens, so runaway generations end instead of timing out. 0 = no cap."
+        },
+        {
             "name": "endpoint",
             "label": "Confidential endpoint",
             "type": "PRESET",

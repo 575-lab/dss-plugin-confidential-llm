@@ -158,3 +158,11 @@ def test_sse_stops_at_done_and_ignores_comments_and_crlf():
 
 def test_sse_final_event_without_trailing_newline():
     assert [e["n"] for e in iter_sse_json([b'data: {"n": 7}'])] == [7]
+
+
+def test_thinking_and_default_max_tokens():
+    body = messages.build_request("m", {"messages": []}, {}, thinking="off", default_max_tokens=8192)
+    assert body["reasoning_effort"] == "none" and body["max_tokens"] == 8192
+    body = messages.build_request("m", {"messages": []}, {"maxOutputTokens": 100}, default_max_tokens=8192)
+    assert body["max_tokens"] == 100 and "reasoning_effort" not in body
+    assert "max_tokens" not in messages.build_request("m", {"messages": []}, {}, default_max_tokens=None)

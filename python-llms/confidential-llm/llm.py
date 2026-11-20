@@ -36,6 +36,15 @@ class ConfidentialLLM(BaseLLM):
         self.model = config.get("model")
         if not self.model:
             raise ValueError("The model name is required.")
+        self.thinking = config.get("thinking") or "default"
+        if self.thinking not in ("default", "off"):
+            raise ValueError("Unknown thinking mode {!r}.".format(self.thinking))
+        max_tokens = config.get("default_max_output_tokens")
+        if max_tokens is None:
+            max_tokens = 8192
+        if int(max_tokens) < 0:
+            raise ValueError("Default max output tokens must be 0 or more.")
+        self.default_max_tokens = int(max_tokens) or None
         # Fails here (not at first request) if pins are missing or the URL is unsafe.
         self.endpoint_config = EndpointConfig.from_preset(config.get("endpoint"))
         self.session = get_session(self.endpoint_config)
@@ -51,7 +60,8 @@ class ConfidentialLLM(BaseLLM):
 
     def process(self, query, settings, trace):
         with trace.subspan("Confidential LLM request") as span:
-            body = messages.build_request(self.model, query, settings, stream=False)
+            body = messages.build_request(self.model, query, settings, stream=False,
+                                          thinking=self.thinking, default_max_tokens=self.default_max_tokens)
             self._record_attestation(span, self.session.current())
             response = client.complete(self.session, body)
             answer = messages.to_dss_response(response)
@@ -61,7 +71,8 @@ class ConfidentialLLM(BaseLLM):
     async def aprocess_stream(self, query, settings, trace):
         loop = asyncio.get_running_loop()
         with trace.subspan("Confidential LLM streamed request") as span:
-            body = messages.build_request(self.model, query, settings, stream=True)
+            body = messages.build_request(self.model, query, settings, stream=True,
+                                          thinking=self.thinking, default_max_tokens=self.default_max_tokens)
             # Attestation blocks for seconds: keep it off the event loop.
             self._record_attestation(span, await loop.run_in_executor(None, self.session.current))
 

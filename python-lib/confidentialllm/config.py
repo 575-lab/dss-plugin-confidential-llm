@@ -26,7 +26,7 @@ _HEX96 = re.compile(r"^[0-9a-f]{96}$")  # TDX measurements are 48 bytes
 
 DEFAULT_ALLOWED_TCB = ("UpToDate",)
 DEFAULT_TTL_MINUTES = 10
-DEFAULT_TIMEOUT_SECONDS = 300
+DEFAULT_TIMEOUT_SECONDS = 600
 
 
 def parse_pins(raw):

@@ -59,7 +59,7 @@
             "name": "request_timeout_seconds",
             "label": "Request timeout (seconds)",
             "type": "INT",
-            "defaultValue": 300
+            "defaultValue": 600
         }
     ]
 }
