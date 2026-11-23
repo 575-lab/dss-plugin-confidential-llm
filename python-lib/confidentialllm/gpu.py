@@ -91,13 +91,13 @@ def _default_key_resolver(token):
     return key
 
 
-def _decode(token, key_resolver):
+def _decode(token, key_resolver, issuer=NRAS_ISSUER):
     import jwt
 
     try:
         key = key_resolver(token)
         return jwt.decode(
-            token, key, algorithms=["ES384"], issuer=NRAS_ISSUER,
+            token, key, algorithms=["ES384"], issuer=issuer,
             options={"require": ["exp", "iat", "iss"]},
         )
     except Exception as exc:
@@ -116,7 +116,7 @@ def check_device_claims(name, claims, digest_hex):
             raise AttestationError("{}: certificate chain {} is not valid and OCSP-good.".format(name, chain))
 
 
-def verify_tokens(gpu, digest_hex, key_resolver=None):
+def verify_tokens(gpu, digest_hex, key_resolver=None, issuer=NRAS_ISSUER):
     """Verify the NVIDIA tokens and return a summary per GPU.
 
     ``gpu`` is {"nras_overall_jwt": str, "nras_device_jwts": {"GPU-0": str, ...}} as sent by the gateway.
@@ -125,7 +125,7 @@ def verify_tokens(gpu, digest_hex, key_resolver=None):
     if not isinstance(gpu, dict) or "nras_overall_jwt" not in gpu or not gpu.get("nras_device_jwts"):
         raise AttestationError("The gateway returned no NVIDIA GPU attestation.")
 
-    overall = _decode(gpu["nras_overall_jwt"], key_resolver)
+    overall = _decode(gpu["nras_overall_jwt"], key_resolver, issuer)
     if overall.get("x-nvidia-overall-att-result") is not True:
         raise AttestationError("NVIDIA's overall attestation result is not true.")
     if not hmac.compare_digest(str(overall.get("eat_nonce")), digest_hex):
@@ -133,7 +133,7 @@ def verify_tokens(gpu, digest_hex, key_resolver=None):
 
     summary = []
     for name, token in gpu["nras_device_jwts"].items():
-        claims = _decode(token, key_resolver)
+        claims = _decode(token, key_resolver, issuer)
         check_device_claims(name, claims, digest_hex)
         summary.append({
             "gpu": name,

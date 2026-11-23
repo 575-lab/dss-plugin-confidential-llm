@@ -1,0 +1,7 @@
+aiohttp>=3.9,<4
+pyhpke>=0.6,<1
+cryptography>=42
+PyJWT[crypto]>=2.8,<3
+# for demo_check.py (uses the plugin's own library)
+tinfoil-ehbp>=0.6.0,<0.7
+httpx>=0.27,<1

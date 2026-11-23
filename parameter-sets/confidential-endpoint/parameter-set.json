@@ -42,6 +42,12 @@
             "description": "Accept any genuine TDX machine with a valid NVIDIA GPU attestation. This proves hardware, not WHICH machine or software. Do not use in production."
         },
         {
+            "name": "demo_trust_root",
+            "label": "DEMO trust root (simulated hardware)",
+            "type": "TEXTAREA",
+            "description": "DEMO ONLY. Paste the public key printed by spark-demo/demo_gateway.py to accept its SIMULATED attestation instead of Intel- and NVIDIA-signed evidence. This proves no hardware. Leave empty for real confidential endpoints."
+        },
+        {
             "name": "allowed_tcb",
             "label": "Allowed Intel TCB statuses",
             "type": "STRINGS",

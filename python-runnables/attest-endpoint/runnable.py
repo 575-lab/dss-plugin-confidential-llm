@@ -60,12 +60,23 @@ class MyRunnable(Runnable):
             pin_status = "<b style='color:#b45f06'>No pins configured.</b> Review the values below, then paste them into the preset."
 
         rows = [
+            _row("Mode", "DEMO - simulated evidence, no hardware" if info.get("demo_mode") else "Hardware attestation"),
             _row("Intel TCB status", info["tcb_status"]),
             _row("Gateway key fingerprint", info["key_fingerprint"]),
         ]
         for gpu_info in info["gpus"]:
             rows.append(_row(gpu_info["gpu"], "{} - driver {} - vbios {}".format(
                 gpu_info["model"], gpu_info["driver"], gpu_info["vbios"])))
+
+        if info.get("demo_mode"):
+            return (
+                "<h3 style='color:#b45f06'>DEMO attestation verified (simulated hardware)</h3>"
+                "<p>The evidence is signed by the demo trust root in the preset, not by Intel or NVIDIA. It is bound to "
+                "this request's nonce and the gateway's key, and goes through the same pin, TCB and GPU-claim checks as "
+                "production, but it proves nothing about hardware.</p>"
+                "<table>{rows}</table><h4>Pin status</h4><p>{pin_status}</p>"
+                "<h4>Measurements to pin</h4><pre>{pins}</pre>"
+            ).format(rows="".join(rows), pin_status=pin_status, pins=html.escape(json.dumps(proposed, indent=2)))
 
         return (
             "<h3 style='color:#1b7f3b'>Attestation verified</h3>"

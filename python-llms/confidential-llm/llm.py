@@ -52,6 +52,7 @@ class ConfidentialLLM(BaseLLM):
     def _record_attestation(self, span, result):
         info = result.info
         span.attributes["attestation_pinned"] = result.pinned
+        span.attributes["attestation_demo_mode"] = bool(info.get("demo_mode"))
         span.attributes["attestation_tcb_status"] = info.get("tcb_status")
         span.attributes["attestation_key_fingerprint"] = info.get("key_fingerprint")
         span.attributes["attestation_mr_td"] = info.get("measurements", {}).get("mr_td")

@@ -97,6 +97,19 @@ def parse_ca_certificate(pem):
     return pem
 
 
+def parse_demo_trust_root(pem):
+    """DEMO MODE: validate the demo gateway's public key. Returns the stripped PEM or None (production mode)."""
+    if pem is None or not str(pem).strip():
+        return None
+    from .demo import load_trust_root
+
+    try:
+        load_trust_root(pem)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+    return str(pem).strip()
+
+
 def tls_verify(config):
     """What httpx should pass as ``verify``.
 
@@ -130,13 +143,19 @@ class EndpointConfig:
     timeout_seconds: int
     gateway_token: str = None
     ca_certificate: str = None
+    demo_trust_root: str = None  # DEMO MODE: simulated evidence signed by this key (spark-demo/)
+
+    @property
+    def demo_mode(self):
+        return bool(self.demo_trust_root)
 
     @property
     def cache_key(self):
         """Sessions are shared between connections with the same trust settings."""
         # Must be hashable (it is a dict key): pins are dicts, so freeze each one into sorted items.
         frozen_pins = tuple(tuple(sorted(pin.items())) for pin in self.pins)
-        return (self.base_url, frozen_pins, self.allowed_tcb, self.ttl_seconds, self.gateway_token, self.ca_certificate)
+        return (self.base_url, frozen_pins, self.allowed_tcb, self.ttl_seconds, self.gateway_token, self.ca_certificate,
+                self.demo_trust_root)
 
     @classmethod
     def from_preset(cls, preset, *, discovery=False):
@@ -176,6 +195,8 @@ class EndpointConfig:
         if ca_certificate and parts.scheme != "https":
             raise ConfigError("A trusted certificate only applies to an https gateway URL.")
 
+        demo_trust_root = parse_demo_trust_root(preset.get("demo_trust_root"))
+
         return cls(
             base_url=base_url,
             pins=pins,
@@ -185,4 +206,5 @@ class EndpointConfig:
             timeout_seconds=_positive_int(preset.get("request_timeout_seconds"), DEFAULT_TIMEOUT_SECONDS, "Request timeout"),
             gateway_token=token,
             ca_certificate=ca_certificate,
+            demo_trust_root=demo_trust_root,
         )
