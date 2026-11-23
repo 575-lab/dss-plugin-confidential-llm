@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from . import gpu, tdx
+from . import demo, gpu, tdx
 from .binding import NONCE_SIZE, compute_digest
 from .config import tls_verify
 from .errors import AttestationError, GatewayError
@@ -88,12 +88,21 @@ def verify_evidence(config, nonce, key_config, evidence, key_resolver=None):
     except (KeyError, ValueError, TypeError) as exc:
         raise AttestationError("The gateway returned no valid TDX quote.") from exc
 
-    parsed, tcb_status = _run_async(tdx.verify_quote(quote, config.allowed_tcb))
+    if config.demo_mode:
+        # DEMO MODE: simulated evidence signed by the demo key; every check below is the production path.
+        parsed, tcb_status = demo.verify_quote(quote, config.allowed_tcb, config.demo_trust_root)
+    else:
+        parsed, tcb_status = _run_async(tdx.verify_quote(quote, config.allowed_tcb))
     tdx.check_report_data(parsed.report.report_data, digest)
     measurements = tdx.read_measurements(parsed.report)
     pinned = tdx.check_pins(measurements, config.pins, config.allow_unpinned)
 
-    gpus = gpu.verify_tokens(evidence.get("gpu"), digest.hex(), key_resolver)
+    if config.demo_mode:
+        gpus = gpu.verify_tokens(evidence.get("gpu"), digest.hex(),
+                                 key_resolver or demo.gpu_key_resolver(config.demo_trust_root),
+                                 issuer=demo.DEMO_NRAS_ISSUER)
+    else:
+        gpus = gpu.verify_tokens(evidence.get("gpu"), digest.hex(), key_resolver)
 
     return AttestationResult(
         key_config=key_config,
@@ -104,6 +113,7 @@ def verify_evidence(config, nonce, key_config, evidence, key_resolver=None):
             "measurements": measurements,
             "gpus": gpus,
             "key_fingerprint": hashlib.sha256(key_config).hexdigest()[:16],
+            "demo_mode": config.demo_mode,
         },
     )
 

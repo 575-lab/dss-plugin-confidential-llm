@@ -1,10 +1,10 @@
 {
-    "id": "confidential-llm",
-    "version": "0.1.4",
+    "id": "confidential-llm-demo",
+    "version": "0.1.4-demo.1",
     "meta": {
-        "label": "Confidential LLM",
+        "label": "Confidential LLM (demo fork)",
         "category": "Generative AI",
-        "description": "Use an LLM running in a hardware-attested confidential VM (Intel TDX + NVIDIA H100) as an LLM Mesh model. Prompts are encrypted to a key proven to live inside the verified enclave.",
+        "description": "DEMO FORK: adds a simulated-attestation mode for machines without TDX/H100 (see spark-demo/). Use an LLM running in a hardware-attested confidential VM (Intel TDX + NVIDIA H100) as an LLM Mesh model. Prompts are encrypted to a key proven to live inside the verified enclave.",
         "author": "575 Lab, Dataiku",
         "icon": "fas fa-user-shield",
         "licenseInfo": "Apache Software License",
