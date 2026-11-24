@@ -219,7 +219,12 @@ def _issued_by(cert, issuer):
 
 def verify_ak_chain(ak_cert, intermediates, roots, now=None):
     """Return the chain [ak, ..., root] if ``ak_cert`` chains to one of ``roots``; raise otherwise."""
-    now = now or datetime.now(timezone.utc)
+    with warnings.catch_warnings():  # names are parsed lazily; Google's legacy CNs exceed 64 characters
+        warnings.simplefilter("ignore", UserWarning)
+        return _build_chain(ak_cert, intermediates, roots, now or datetime.now(timezone.utc))
+
+
+def _build_chain(ak_cert, intermediates, roots, now):
     chain, current = [ak_cert], ak_cert
     _check_validity(ak_cert, now)
     for _ in range(MAX_CHAIN_LENGTH):
