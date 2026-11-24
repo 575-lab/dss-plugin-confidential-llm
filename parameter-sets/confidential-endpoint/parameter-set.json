@@ -1,4 +1,4 @@
-/* Connection and trust settings for one confidential LLM endpoint (a gateway running inside a TDX + GPU confidential VM). */
+/* Connection and trust settings for one confidential LLM endpoint (a gateway running inside a TDX or GCE SEV + GPU confidential VM). */
 {
     "meta": {
         "label": "Confidential endpoint",
@@ -29,31 +29,48 @@
             "description": "For an https gateway with a self-signed certificate: paste the certificate here. Only this certificate is then trusted. Leave empty to use the system's certificate authorities."
         },
         {
+            "name": "tee_type",
+            "label": "Confidential VM type",
+            "type": "SELECT",
+            "defaultValue": "tdx",
+            "selectChoices": [
+                {"value": "tdx", "label": "Intel TDX (hardware attestation by Intel)"},
+                {"value": "gce-vtpm", "label": "GCP Confidential VM, AMD SEV (attestation by Google's vTPM)"}
+            ],
+            "description": "Which evidence the gateway must present. Intel TDX is attested by the CPU itself. A GCP AMD SEV VM (for example G4 with an RTX PRO 6000) is attested by Google's virtual TPM: Google's platform is then part of what you trust."
+        },
+        {
             "name": "pins",
-            "label": "Pinned TDX measurements",
+            "label": "Pinned measurements",
             "type": "TEXTAREA",
-            "description": "JSON object (or list of objects, any-of) with mr_td, rtmr0, rtmr1, rtmr2 as 96-character hex. Get them from the 'Attest confidential endpoint' macro and review them first. Required unless unpinned mode is enabled."
+            "description": "JSON object (or list of objects, any-of). Intel TDX: mr_td, rtmr0, rtmr1, rtmr2 as 96-character hex. GCP AMD SEV: pcr0, pcr4, pcr7 (required), pcr8, pcr9 as 64-character hex, and optionally instance_id. Get them from the 'Attest confidential endpoint' macro and review them first. Required unless unpinned mode is enabled."
         },
         {
             "name": "allow_unpinned",
             "label": "Allow unpinned endpoint (testing only)",
             "type": "BOOLEAN",
             "defaultValue": false,
-            "description": "Accept any genuine TDX machine with a valid NVIDIA GPU attestation. This proves hardware, not WHICH machine or software. Do not use in production."
+            "description": "Accept any genuine confidential VM of the selected type with a valid NVIDIA GPU attestation. This proves the platform, not WHICH machine or software. Do not use in production."
         },
         {
             "name": "allowed_tcb",
-            "label": "Allowed Intel TCB statuses",
+            "label": "Allowed Intel TCB statuses (TDX only)",
             "type": "STRINGS",
             "defaultValue": ["UpToDate"],
-            "description": "Intel's verdict on the CPU's security patch level. Anything else (for example OutOfDate) is rejected unless listed here."
+            "description": "Intel's verdict on the CPU's security patch level. Anything else (for example OutOfDate) is rejected unless listed here. Not used for GCP AMD SEV VMs."
+        },
+        {
+            "name": "allowed_gpu_models",
+            "label": "Allowed GPU models",
+            "type": "STRINGS",
+            "description": "Optional. Prefixes of NVIDIA's attested hardware model, for example GH100 (H100) or GB20X (RTX PRO 6000). Empty accepts any GPU model NVIDIA attests."
         },
         {
             "name": "attestation_ttl_minutes",
             "label": "Re-attest every (minutes)",
             "type": "INT",
             "defaultValue": 10,
-            "description": "Attestation takes a few seconds (it calls Intel and NVIDIA services), so it is cached per process for this long."
+            "description": "Attestation takes a few seconds (it calls Intel or Google and NVIDIA services), so it is cached per process for this long."
         },
         {
             "name": "request_timeout_seconds",

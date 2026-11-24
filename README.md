@@ -4,16 +4,17 @@
 > but the plugin components have not yet been validated inside a running DSS instance. Treat it as a proof of concept, not a
 > security product, and read "What is and is not protected" before relying on it.
 
-Use an LLM that runs inside a hardware-attested confidential VM (Intel TDX + NVIDIA H100) as a model in the
-Dataiku LLM Mesh. The plugin refuses to send anything until the endpoint proves what it is, then encrypts every
+Use an LLM that runs inside an attested confidential VM as a model in the Dataiku LLM Mesh: either Intel TDX +
+NVIDIA H100 (hardware-attested by Intel), or a GCP AMD SEV Confidential VM + NVIDIA RTX PRO 6000 (attested by Google's
+vTPM, see "GCP AMD SEV endpoints" below). The plugin refuses to send anything until the endpoint proves what it is, then encrypts every
 prompt to a key that the proof shows lives inside the verified enclave.
 
 ```
 Prompt Studio / recipe / agent
    └─ (optional) a PII-masking guardrail
         └─ Confidential LLM (this plugin)
-             ├─ verify: Intel TDX quote + NVIDIA GPU tokens, bound to a fresh nonce and the gateway's key
-             ├─ check:  TDX measurements against the pins an administrator reviewed
+             ├─ verify: Intel TDX quote (or GCE vTPM quote) + NVIDIA GPU tokens, bound to a fresh nonce and the gateway's key
+             ├─ check:  measurements against the pins an administrator reviewed
              └─ send:   body-encrypted (EHBP/HPKE) request ──▶ gateway ──▶ model server inside the VM
 ```
 
@@ -21,21 +22,23 @@ Prompt Studio / recipe / agent
 
 | Component | What it does |
 |---|---|
-| `parameter-sets/confidential-endpoint` | Gateway URL, access token, pinned measurements, allowed Intel TCB statuses, attestation lifetime. |
+| `parameter-sets/confidential-endpoint` | Gateway URL, access token, confidential VM type, pinned measurements, allowed Intel TCB statuses, allowed GPU models, attestation lifetime. |
 | `python-llms/confidential-llm` | The LLM Mesh connection (completion and streaming). Thin adapter over the library. |
 | `python-runnables/attest-endpoint` | Macro: attests the endpoint and shows the measurements to review and pin. |
-| `python-lib/confidentialllm` | All logic: binding, TDX/GPU verification, session cache, message mapping, EHBP client. |
+| `python-lib/confidentialllm` | All logic: binding, TDX/vTPM/GPU verification, session cache, message mapping, EHBP client. |
 
 ## Setting it up
 
 1. Install the plugin and build its code environment.
-2. Create a preset of **Confidential endpoint** with the gateway URL (and token, if the gateway requires one).
-3. Run the macro **Attest confidential endpoint** on that preset. Review the report, then paste the shown
-   `mr_td` / `rtmr0` / `rtmr1` / `rtmr2` into the preset's *Pinned TDX measurements*.
+2. Create a preset of **Confidential endpoint** with the gateway URL (and token, if the gateway requires one), and the
+   *Confidential VM type* (Intel TDX, or GCP AMD SEV).
+3. Run the macro **Attest confidential endpoint** on that preset. Review the report, then paste the shown measurements
+   into the preset's *Pinned measurements*: `mr_td` / `rtmr0` / `rtmr1` / `rtmr2` for TDX, `pcr0` / `pcr4` / `pcr7` /
+   `pcr8` / `pcr9` for GCP AMD SEV.
 4. Create a Custom LLM connection using this plugin, choose the preset, and enter the model name the server exposes.
 
 Without pins the connection refuses to start. The only way around that is the explicit *Allow unpinned endpoint
-(testing only)* option, which proves "a genuine TDX machine", not "this machine".
+(testing only)* option, which proves "a genuine confidential VM", not "this machine".
 
 ## Threat model
 
@@ -59,6 +62,20 @@ What it does not cover:
 - **Which model runs.** Pins identify the boot environment, not the gateway, model server or weights.
 
 If DSS must also be untrusted, the encryption has to happen on the user's side before the text reaches DSS. That is a different design.
+
+### GCP AMD SEV endpoints (vTPM)
+
+GCP offers the NVIDIA RTX PRO 6000 (G4 machines) only as **AMD SEV** Confidential VMs, not SEV-SNP or TDX. Plain SEV has
+no hardware attestation report, so the CPU side is attested by Google's **virtual TPM**:
+
+- The plugin checks that the quote's attestation key is certified by Google's EK/AK CA (the roots are bundled from
+  go-tpm-tools), that the quote commits to the nonce and gateway key, and that the boot event log replays to the quoted
+  PCRs. It then requires the GCE "Confidential VM technology" event (SEV or stronger) and Secure Boot, and compares the
+  PCRs (and optionally the GCE `instance_id`) with the pins.
+- **This moves Google into the trusted column.** The vTPM runs in Google's hypervisor, so the proof is "Google's
+  platform says this is a SEV Confidential VM with this boot chain", not "the CPU says so". Plain SEV also encrypts
+  memory without integrity protection. The GPU side is still attested by NVIDIA hardware.
+- Choose Intel TDX when the cloud provider itself must be excluded.
 
 ## What is and is not protected
 
@@ -84,9 +101,13 @@ The plugin talks to a small gateway running **inside** the confidential VM, in f
 (for example Ollama). The gateway is not included here. It must provide:
 
 - `GET /.well-known/hpke-keys`: the HPKE public key (`application/ohttp-keys`) used to encrypt request bodies (EHBP).
-- `GET /attestation?nonce=<64 hex>`: JSON with `tdx_quote_b64` (an Intel TDX quote whose `report_data` starts with
-  `SHA256("ehbp-attest-v1\0" || nonce || key_config)`, rest zero) and `gpu` (`nras_overall_jwt` and `nras_device_jwts`: NVIDIA
-  NRAS tokens whose `eat_nonce` is that same digest, produced by `nvattest attest --verifier remote --nonce ...`).
+- `GET /attestation?nonce=<64 hex>`: JSON with `tee` and the CPU evidence, plus `gpu` (`nras_overall_jwt` and
+  `nras_device_jwts`: NVIDIA NRAS tokens whose `eat_nonce` is the binding digest
+  `SHA256("ehbp-attest-v1\0" || nonce || key_config)`, produced by `nvattest attest --verifier remote --nonce ...`).
+  - `"tee": "tdx"` (or absent): `tdx_quote_b64`, an Intel TDX quote whose `report_data` is the digest followed by 32 zero bytes.
+  - `"tee": "gce-vtpm"`: `vtpm` with `ak_cert_der_b64`, `intermediates_der_b64`, `quote_b64` (TPMS_ATTEST whose
+    `extraData` is the digest), `signature_b64` (TPMT_SIGNATURE), `pcrs` (SHA-256 bank, index to hex) and
+    `event_log_b64` (the TCG2 firmware event log).
 - `POST /v1/chat/completions` with an EHBP-encrypted body, forwarded to the model server. Plaintext requests must be refused.
 - A bearer-token check and TLS if it is reachable over a network you do not fully control.
 - When it forwards to the model server, it must **rewrite the `Host` header to the server's own address**. Servers such as
@@ -97,9 +118,9 @@ The binding construction in `python-lib/confidentialllm/binding.py` must match t
 
 ## Deploying a preset
 
-- Preset values: *Gateway URL*, *Gateway access token*, *Trusted gateway certificate* (when self-signed), and *Pinned TDX
-  measurements* (from the macro).
-- DSS needs outbound internet to Intel's collateral service and NVIDIA's key service (attestation checks), and a code env built
+- Preset values: *Gateway URL*, *Gateway access token*, *Trusted gateway certificate* (when self-signed), *Confidential VM
+  type*, and *Pinned measurements* (from the macro).
+- DSS needs outbound internet to Intel's collateral service (TDX only) and NVIDIA's key service (attestation checks), and a code env built
   from `code-env/python/spec/requirements.txt`.
 - Restrict network access to the gateway to the DSS host (cloud firewall), in addition to the token.
 - Check a deployment without DSS: `GATEWAY_URL=https://host:8443 GATEWAY_TOKEN=... CA_FILE=gw.crt PINS_FILE=pins.json python3 scripts/live_check.py`.

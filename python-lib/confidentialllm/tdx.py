@@ -16,7 +16,7 @@
 
 import hmac
 
-from .config import PIN_KEYS
+from . import pins as pins_mod
 from .errors import AttestationError
 
 TDX_TEE_TYPE = 0x81
@@ -35,27 +35,8 @@ def check_report_data(report_data, digest):
 
 
 def check_pins(measurements, pins, allow_unpinned):
-    """Return True if measurements were enforced against pins, False if unpinned mode let them through.
-
-    ``pins`` is an any-of list: the machine passes if it matches at least one pin set exactly.
-    """
-    if not pins:
-        if allow_unpinned:
-            return False
-        raise AttestationError("No pinned measurements are configured; refusing to trust an unpinned endpoint.")
-
-    mismatches = []
-    for pin in pins:
-        wrong = [key for key in PIN_KEYS if key in pin and not hmac.compare_digest(
-            pin[key].encode(), (measurements.get(key) or "").encode())]
-        if not wrong:
-            return True
-        mismatches.append(wrong)
-    best = min(mismatches, key=len)
-    raise AttestationError(
-        "The endpoint's TDX identity does not match any pinned measurement (differs in: {}). "
-        "The software or firmware may have changed; review and re-pin if that is expected.".format(", ".join(best))
-    )
+    """Return True if measurements were enforced against pins, False if unpinned mode let them through."""
+    return pins_mod.check_pins(measurements, pins, allow_unpinned, "TDX")
 
 
 def read_measurements(report):

@@ -1,10 +1,10 @@
 {
     "id": "confidential-llm",
-    "version": "0.1.4",
+    "version": "0.2.0",
     "meta": {
         "label": "Confidential LLM",
         "category": "Generative AI",
-        "description": "Use an LLM running in a hardware-attested confidential VM (Intel TDX + NVIDIA H100) as an LLM Mesh model. Prompts are encrypted to a key proven to live inside the verified enclave.",
+        "description": "Use an LLM running in an attested confidential VM (Intel TDX + H100, or GCP AMD SEV + RTX PRO 6000) as an LLM Mesh model. Prompts are encrypted to a key proven to live inside the verified enclave.",
         "author": "575 Lab, Dataiku",
         "icon": "fas fa-user-shield",
         "licenseInfo": "Apache Software License",

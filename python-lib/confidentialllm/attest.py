@@ -23,9 +23,9 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from . import gpu, tdx
+from . import gpu, pins, tdx, vtpm
 from .binding import NONCE_SIZE, compute_digest
-from .config import tls_verify
+from .config import TEE_GCE_VTPM, TEE_LABELS, TEE_TDX, tls_verify
 from .errors import AttestationError, GatewayError
 
 LOGGER = logging.getLogger(__name__)
@@ -79,10 +79,7 @@ def fetch_evidence(config, nonce, http_client=None):
             client.close()
 
 
-def verify_evidence(config, nonce, key_config, evidence, key_resolver=None):
-    """Verify everything and return an AttestationResult. Raises AttestationError on any failure."""
-    digest = compute_digest(nonce, key_config)
-
+def _verify_tdx(config, evidence, digest):
     try:
         quote = base64.b64decode(evidence["tdx_quote_b64"], validate=True)
     except (KeyError, ValueError, TypeError) as exc:
@@ -92,20 +89,46 @@ def verify_evidence(config, nonce, key_config, evidence, key_resolver=None):
     tdx.check_report_data(parsed.report.report_data, digest)
     measurements = tdx.read_measurements(parsed.report)
     pinned = tdx.check_pins(measurements, config.pins, config.allow_unpinned)
+    return measurements, pinned, {"tcb_status": tcb_status}
 
-    gpus = gpu.verify_tokens(evidence.get("gpu"), digest.hex(), key_resolver)
 
-    return AttestationResult(
-        key_config=key_config,
-        attested_at=time.time(),
-        pinned=pinned,
-        info={
-            "tcb_status": tcb_status,
-            "measurements": measurements,
-            "gpus": gpus,
-            "key_fingerprint": hashlib.sha256(key_config).hexdigest()[:16],
-        },
-    )
+def _verify_gce_vtpm(config, evidence, digest):
+    pinned_pcrs = {int(key[3:]) for pin in config.pins for key in pin if key.startswith("pcr")}
+    measurements, platform = vtpm.verify_evidence(evidence.get("vtpm"), digest, pinned_pcrs=pinned_pcrs)
+    pinned = pins.check_pins(measurements, config.pins, config.allow_unpinned, "vTPM")
+    return measurements, pinned, {"tcb_status": "n/a (vTPM, no CPU vendor TCB)", "platform": platform}
+
+
+_VERIFIERS = {TEE_TDX: _verify_tdx, TEE_GCE_VTPM: _verify_gce_vtpm}
+
+
+def verify_evidence(config, nonce, key_config, evidence, key_resolver=None):
+    """Verify everything and return an AttestationResult. Raises AttestationError on any failure.
+
+    The TEE type comes from the preset, never from the evidence: a gateway cannot downgrade a TDX preset
+    to the weaker vTPM check (or the other way round) by sending a different kind of evidence.
+    """
+    digest = compute_digest(nonce, key_config)
+
+    if not isinstance(evidence, dict):
+        raise AttestationError("The gateway returned no attestation evidence.")
+    sent_tee = evidence.get("tee", TEE_TDX)  # gateways before the vTPM support send TDX evidence without a "tee" field
+    if sent_tee != config.tee_type:
+        raise AttestationError("The gateway sent {} evidence, but this endpoint is configured for {}.".format(
+            TEE_LABELS.get(sent_tee, repr(sent_tee)), TEE_LABELS[config.tee_type]))
+
+    measurements, pinned, cpu_info = _VERIFIERS[config.tee_type](config, evidence, digest)
+
+    gpus = gpu.verify_tokens(evidence.get("gpu"), digest.hex(), key_resolver, config.allowed_gpu_models)
+
+    info = {
+        "tee": config.tee_type,
+        "measurements": measurements,
+        "gpus": gpus,
+        "key_fingerprint": hashlib.sha256(key_config).hexdigest()[:16],
+    }
+    info.update(cpu_info)
+    return AttestationResult(key_config=key_config, attested_at=time.time(), pinned=pinned, info=info)
 
 
 def attest_endpoint(config, http_client=None, key_resolver=None):

@@ -21,16 +21,57 @@ from urllib.parse import urlsplit
 
 from .errors import ConfigError
 
-PIN_KEYS = ("mr_td", "rtmr0", "rtmr1", "rtmr2")
+TEE_TDX = "tdx"
+TEE_GCE_VTPM = "gce-vtpm"
+TEE_TYPES = (TEE_TDX, TEE_GCE_VTPM)
+TEE_LABELS = {TEE_TDX: "Intel TDX", TEE_GCE_VTPM: "GCE Confidential VM (vTPM)"}
+
+PIN_KEYS = ("mr_td", "rtmr0", "rtmr1", "rtmr2")  # Intel TDX
+VTPM_PIN_KEYS = ("pcr0", "pcr4", "pcr7", "pcr8", "pcr9", "instance_id")  # GCE vTPM
 _HEX96 = re.compile(r"^[0-9a-f]{96}$")  # TDX measurements are 48 bytes
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")  # SHA-256 PCRs are 32 bytes
+_DIGITS = re.compile(r"^[0-9]{1,20}$")  # GCE instance ids are 64-bit integers
+
+
+def _check_tdx_pin(entry):
+    unknown = set(entry) - set(PIN_KEYS)
+    if unknown:
+        raise ConfigError("Unknown TDX pin fields: {}. Allowed: {}.".format(sorted(unknown), list(PIN_KEYS)))
+    if "mr_td" not in entry:
+        raise ConfigError("Every TDX pin set must include 'mr_td'.")
+    for key, value in entry.items():
+        if not isinstance(value, str) or not _HEX96.match(value.lower()):
+            raise ConfigError("Pin '{}' must be 96 hex characters (a 48-byte TDX measurement).".format(key))
+    return {key: value.lower() for key, value in entry.items()}
+
+
+def _check_vtpm_pin(entry):
+    unknown = set(entry) - set(VTPM_PIN_KEYS)
+    if unknown:
+        raise ConfigError("Unknown vTPM pin fields: {}. Allowed: {}.".format(sorted(unknown), list(VTPM_PIN_KEYS)))
+    missing = [key for key in ("pcr0", "pcr4", "pcr7") if key not in entry]
+    if missing:
+        raise ConfigError("Every vTPM pin set must include pcr0, pcr4 and pcr7 (missing: {}).".format(", ".join(missing)))
+    out = {}
+    for key, value in entry.items():
+        if key == "instance_id":
+            value = str(value) if isinstance(value, int) and not isinstance(value, bool) else value
+            if not isinstance(value, str) or not _DIGITS.match(value):
+                raise ConfigError("Pin 'instance_id' must be the numeric GCE instance id.")
+            out[key] = value
+        elif not isinstance(value, str) or not _HEX64.match(value.lower()):
+            raise ConfigError("Pin '{}' must be 64 hex characters (a SHA-256 PCR value).".format(key))
+        else:
+            out[key] = value.lower()
+    return out
 
 DEFAULT_ALLOWED_TCB = ("UpToDate",)
 DEFAULT_TTL_MINUTES = 10
 DEFAULT_TIMEOUT_SECONDS = 600
 
 
-def parse_pins(raw):
-    """Parse the pinned TDX measurements.
+def parse_pins(raw, tee_type=TEE_TDX):
+    """Parse the pinned measurements for ``tee_type``.
 
     Accepts a JSON object, or a list of objects when several identities are acceptable (for
     example during a rolling update). Returns a tuple of dicts; an empty tuple means "no pins".
@@ -47,19 +88,12 @@ def parse_pins(raw):
     if not isinstance(data, list) or not data:
         raise ConfigError("Pinned measurements must be a JSON object or a non-empty list of objects.")
 
+    check = _check_vtpm_pin if tee_type == TEE_GCE_VTPM else _check_tdx_pin
     pins = []
     for entry in data:
         if not isinstance(entry, dict):
             raise ConfigError("Each pinned measurement set must be a JSON object.")
-        unknown = set(entry) - set(PIN_KEYS)
-        if unknown:
-            raise ConfigError("Unknown pin fields: {}. Allowed: {}.".format(sorted(unknown), list(PIN_KEYS)))
-        if "mr_td" not in entry:
-            raise ConfigError("Every pin set must include 'mr_td'.")
-        for key, value in entry.items():
-            if not isinstance(value, str) or not _HEX96.match(value.lower()):
-                raise ConfigError("Pin '{}' must be 96 hex characters (a 48-byte TDX measurement).".format(key))
-        pins.append({key: value.lower() for key, value in entry.items()})
+        pins.append(check(entry))
     return tuple(pins)
 
 
@@ -130,13 +164,16 @@ class EndpointConfig:
     timeout_seconds: int
     gateway_token: str = None
     ca_certificate: str = None
+    tee_type: str = TEE_TDX
+    allowed_gpu_models: tuple = ()
 
     @property
     def cache_key(self):
         """Sessions are shared between connections with the same trust settings."""
         # Must be hashable (it is a dict key): pins are dicts, so freeze each one into sorted items.
         frozen_pins = tuple(tuple(sorted(pin.items())) for pin in self.pins)
-        return (self.base_url, frozen_pins, self.allowed_tcb, self.ttl_seconds, self.gateway_token, self.ca_certificate)
+        return (self.base_url, self.tee_type, frozen_pins, self.allowed_tcb, self.allowed_gpu_models,
+                self.ttl_seconds, self.gateway_token, self.ca_certificate)
 
     @classmethod
     def from_preset(cls, preset, *, discovery=False):
@@ -146,14 +183,17 @@ class EndpointConfig:
         show an administrator the measurements to pin. It is never used by the LLM connection.
         """
         preset = preset or {}
-        pins = parse_pins(preset.get("pins"))
+        tee_type = preset.get("tee_type") or TEE_TDX  # presets made before 0.2.0 have no TEE type: they are TDX
+        if tee_type not in TEE_TYPES:
+            raise ConfigError("Unknown TEE type {!r}. Allowed: {}.".format(tee_type, list(TEE_TYPES)))
+        pins = parse_pins(preset.get("pins"), tee_type)
         allow_unpinned = bool(preset.get("allow_unpinned", False))
 
         if not pins and not (allow_unpinned or discovery):
             raise ConfigError(
-                "No pinned measurements are configured. Without them any genuine TDX machine would be "
+                "No pinned measurements are configured. Without them any genuine {} machine would be "
                 "accepted. Run the 'Attest confidential endpoint' macro, review the measurements, and paste "
-                "them into the preset (or explicitly allow unpinned endpoints for testing)."
+                "them into the preset (or explicitly allow unpinned endpoints for testing).".format(TEE_LABELS[tee_type])
             )
 
         allowed_tcb = preset.get("allowed_tcb") or list(DEFAULT_ALLOWED_TCB)
@@ -164,6 +204,11 @@ class EndpointConfig:
             raise ConfigError("At least one allowed Intel TCB status is required.")
         if any("revoked" in status.lower() for status in allowed_tcb):
             raise ConfigError("A revoked TCB can never be allowed.")
+
+        gpu_models = preset.get("allowed_gpu_models") or []
+        if isinstance(gpu_models, str):
+            gpu_models = gpu_models.split(",")
+        gpu_models = tuple(sorted({str(m).strip() for m in gpu_models if str(m).strip()}))
 
         base_url = _normalize_url(preset.get("gateway_url"))
         parts = urlsplit(base_url)
@@ -185,4 +230,6 @@ class EndpointConfig:
             timeout_seconds=_positive_int(preset.get("request_timeout_seconds"), DEFAULT_TIMEOUT_SECONDS, "Request timeout"),
             gateway_token=token,
             ca_certificate=ca_certificate,
+            tee_type=tee_type,
+            allowed_gpu_models=gpu_models,
         )

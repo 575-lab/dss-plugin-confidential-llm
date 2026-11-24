@@ -283,3 +283,18 @@ def test_macro_works_without_pins_and_reports_failures_readably(monkeypatch):
     monkeypatch.setattr(attest, "attest_endpoint", boom)
     html = make_macro(pins="").run(None)
     assert "Attestation failed" in html and "<script>" not in html  # error text is HTML-escaped
+
+
+def test_macro_reports_vtpm_identity_and_trust_caveat(monkeypatch):
+    p = "ab" * 32
+    measurements = {"pcr0": p, "pcr4": p, "pcr7": p, "pcr8": p, "pcr9": p, "instance_id": "42"}
+    monkeypatch.setattr(attest, "attest_endpoint", lambda cfg: AttestationResult(b"k", 1.0, True, {
+        "tee": "gce-vtpm", "tcb_status": "n/a", "key_fingerprint": "f",
+        "gpus": [{"gpu": "GPU-0", "model": "GB20X A01 GSP BROM", "driver": "580.196.07", "vbios": "98"}],
+        "measurements": measurements,
+        "platform": {"technology": "AMD_SEV", "secure_boot": True, "instance": {
+            "instance_name": "g4-test", "instance_id": "42", "zone": "z", "project_id": "proj"}}}))
+    html = make_macro(tee_type="gce-vtpm", pins=json.dumps({"pcr0": p, "pcr4": p, "pcr7": p})).run(None)
+    assert "Matches the pinned measurements" in html and "AMD_SEV" in html and "g4-test" in html
+    assert "Google" in html and "instance_id" in html
+    assert "mr_td" not in html and "Intel TCB" not in html

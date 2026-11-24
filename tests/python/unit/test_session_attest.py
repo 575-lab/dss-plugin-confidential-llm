@@ -122,7 +122,7 @@ def stub(monkeypatch):
                 raise AttestationError("tcb")
             return SimpleNamespace(report=fake_report(rd, mr_td)), status
 
-        def verify_tokens(evidence, digest_hex, resolver=None):
+        def verify_tokens(evidence, digest_hex, resolver=None, allowed_models=()):
             if gpu_error:
                 raise gpu_error
             assert digest_hex == digest.hex()

@@ -6,6 +6,8 @@ Environment:
   GATEWAY_URL     default https://localhost:8443  (use the SSH tunnel locally)
   CA_FILE         gateway certificate PEM (required for https with a self-signed certificate)
   PINS_FILE       pinned measurements JSON (required; see the "Attest confidential endpoint" macro)
+  TEE_TYPE        tdx (default) or gce-vtpm (GCP AMD SEV Confidential VM, e.g. G4)
+  ALLOW_UNPINNED  set to 1 to attest without pins and print the measurements (discovery only)
   MODEL           default qwen3.8-27b-uncensored
 """
 import os
@@ -28,6 +30,8 @@ preset = {
     "gateway_token": token,
     "ca_certificate": open(os.environ["CA_FILE"]).read() if os.environ.get("CA_FILE") else None,
     "pins": open(os.environ["PINS_FILE"]).read() if os.environ.get("PINS_FILE") else None,
+    "tee_type": os.environ.get("TEE_TYPE", "tdx"),
+    "allow_unpinned": os.environ.get("ALLOW_UNPINNED") == "1",
 }
 model = os.environ.get("MODEL", "qwen3.8-27b-uncensored")
 
@@ -35,7 +39,11 @@ try:
     session = AttestedSession(EndpointConfig.from_preset(preset))
     t = time.time()
     result = session.current()
-    print("attested in %.1fs | pinned=%s | tcb=%s | gpus=%s" % (time.time() - t, result.pinned, result.info["tcb_status"], result.info["gpus"]))
+    print("attested in %.1fs | tee=%s | pinned=%s | tcb=%s | gpus=%s" % (
+        time.time() - t, result.info["tee"], result.pinned, result.info["tcb_status"], result.info["gpus"]))
+    if "platform" in result.info:
+        print("platform: %s" % result.info["platform"])
+    print("measurements: %s" % result.info["measurements"])
 
     t = time.time()
     body = messages.build_request(model, {"messages": [{"role": "user", "content": "Reply with exactly: pong"}]}, {"maxOutputTokens": 600})

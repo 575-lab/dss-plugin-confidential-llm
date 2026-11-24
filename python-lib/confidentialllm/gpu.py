@@ -104,6 +104,16 @@ def _decode(token, key_resolver):
         raise AttestationError("A GPU token is not a valid NVIDIA-signed token: {}".format(exc)) from exc
 
 
+def check_gpu_model(name, hwmodel, allowed_models):
+    """``allowed_models`` are prefixes of NVIDIA's ``hwmodel`` claim, e.g. "GH100" (Hopper) or "GB20X" (RTX PRO 6000).
+
+    Empty means any model NVIDIA attests is accepted.
+    """
+    if allowed_models and not any(str(hwmodel or "").startswith(prefix) for prefix in allowed_models):
+        raise AttestationError("{}: GPU model {!r} is not one of the allowed models ({}).".format(
+            name, hwmodel, ", ".join(allowed_models)))
+
+
 def check_device_claims(name, claims, digest_hex):
     if not hmac.compare_digest(str(claims.get("eat_nonce")), digest_hex):
         raise AttestationError("{}: the GPU token's nonce does not match this request.".format(name))
@@ -116,7 +126,7 @@ def check_device_claims(name, claims, digest_hex):
             raise AttestationError("{}: certificate chain {} is not valid and OCSP-good.".format(name, chain))
 
 
-def verify_tokens(gpu, digest_hex, key_resolver=None):
+def verify_tokens(gpu, digest_hex, key_resolver=None, allowed_models=()):
     """Verify the NVIDIA tokens and return a summary per GPU.
 
     ``gpu`` is {"nras_overall_jwt": str, "nras_device_jwts": {"GPU-0": str, ...}} as sent by the gateway.
@@ -135,6 +145,7 @@ def verify_tokens(gpu, digest_hex, key_resolver=None):
     for name, token in gpu["nras_device_jwts"].items():
         claims = _decode(token, key_resolver)
         check_device_claims(name, claims, digest_hex)
+        check_gpu_model(name, claims.get("hwmodel"), allowed_models)
         summary.append({
             "gpu": name,
             "model": claims.get("hwmodel"),
