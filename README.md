@@ -1,8 +1,6 @@
 # Confidential LLM (DSS plugin)
 
-> **Status: experimental.** The attestation and encryption logic is unit-tested (and was exercised against a real gateway),
-> but the plugin components have not yet been validated inside a running DSS instance. Treat it as a proof of concept, not a
-> security product, and read "What is and is not protected" before relying on it.
+> **Status: experimental.** The attestation and encryption logic is unit-tested (and was exercised against a real gateway and a real DSS instance)
 
 Use an LLM that runs inside a hardware-attested confidential VM (Intel TDX + NVIDIA H100) as a model in the
 Dataiku LLM Mesh. The plugin refuses to send anything until the endpoint proves what it is, then encrypts every
